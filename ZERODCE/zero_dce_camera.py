@@ -8,7 +8,10 @@ from model import enhance_net_nopool
 # DEVICE
 # =====================================================
 
-device = torch.device("cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Usando dispositivo: {device}")
+if device.type == "cuda":
+    print(f"GPU: {torch.cuda.get_device_name(0)}")
 
 # =====================================================
 # LOAD MODEL

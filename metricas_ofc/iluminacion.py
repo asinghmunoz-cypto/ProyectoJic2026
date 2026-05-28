@@ -1,5 +1,5 @@
 # =============================================================================
-# ARCHIVO: evaluacion_iluminacion_hibrida.py (ignorar)
+# ARCHIVO: iluminacion.py
 #
 # OBJETIVO DEL SCRIPT
 # -----------------------------------------------------------------------------
@@ -222,123 +222,132 @@ def evaluar_iluminacion(frame):
 
 
 # =============================================================================
-# CÁMARA
+# DEMO STANDALONE
 # -----------------------------------------------------------------------------
-# Abre la cámara principal.
-#
-# Si tienen varias cámaras:
-#
-#   0 → principal
-#   1 → secundaria
+# Solo corre si ejecutas este archivo directamente con:
+#   python iluminacion.py
+# Si lo importas desde otro script, este bloque NO se ejecuta.
 # =============================================================================
-cap = cv2.VideoCapture(0)
+if __name__ == "__main__":
 
-# Verificamos que la cámara abra correctamente
-if not cap.isOpened():
-    print("ERROR: No se pudo abrir la cámara")
-    exit()
-
-
-# =============================================================================
-# BUCLE PRINCIPAL
-# -----------------------------------------------------------------------------
-# Lee frames continuamente y evalúa iluminación.
-# =============================================================================
-while True:
-
+    # =========================================================================
+    # CÁMARA
     # -------------------------------------------------------------------------
-    # Leemos frame de cámara
-    # -------------------------------------------------------------------------
-    ret, frame = cap.read()
-
-    # Si falla la lectura → salir
-    if not ret:
-        print("ERROR: No se pudo leer el frame")
-        break
-
-    # -------------------------------------------------------------------------
-    # Evaluamos iluminación
-    # -------------------------------------------------------------------------
-    info = evaluar_iluminacion(frame)
-
-    # -------------------------------------------------------------------------
-    # COLOR SEGÚN SEVERIDAD
+    # Abre la cámara principal.
     #
-    # Verde   → bien
-    # Amarillo→ moderada
-    # Rojo    → crítica
-    # -------------------------------------------------------------------------
-    if info["level"] == "BIEN":
-        color = (0, 255, 0)
-
-    elif info["level"] == "MODERADA":
-        color = (0, 255, 255)
-
-    else:
-        color = (0, 0, 255)
-
-    # -------------------------------------------------------------------------
-    # Mostramos métricas en pantalla
-    # -------------------------------------------------------------------------
-    cv2.putText(
-        frame,
-        f"Brillo promedio: {info['brightness']:.1f}",
-        (10, 30),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        color,
-        2
-    )
-
-    cv2.putText(
-        frame,
-        f"Desviacion std: {info['std_dev']:.1f}",
-        (10, 60),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        color,
-        2
-    )
-
-    cv2.putText(
-        frame,
-        f"Pixeles oscuros: {info['dark_ratio']*100:.1f}%",
-        (10, 90),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        color,
-        2
-    )
-
-    cv2.putText(
-        frame,
-        f"Nivel: {info['level']}",
-        (10, 125),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
-        color,
-        2
-    )
-
-    # -------------------------------------------------------------------------
-    # Mostramos ventana
-    # -------------------------------------------------------------------------
-    cv2.imshow("Evaluacion de Iluminacion", frame)
-
-    # -------------------------------------------------------------------------
-    # Salida con:
+    # Si tienen varias cámaras:
     #
-    #   q
-    #   ESC
+    #   0 → principal
+    #   1 → secundaria
+    # =========================================================================
+    cap = cv2.VideoCapture(0)
+
+    # Verificamos que la cámara abra correctamente
+    if not cap.isOpened():
+        print("ERROR: No se pudo abrir la cámara")
+        exit()
+
+
+    # =========================================================================
+    # BUCLE PRINCIPAL
     # -------------------------------------------------------------------------
-    key = cv2.waitKey(1) & 0xFF
+    # Lee frames continuamente y evalúa iluminación.
+    # =========================================================================
+    while True:
 
-    if key == ord('q') or key == 27:
-        break
+        # ---------------------------------------------------------------------
+        # Leemos frame de cámara
+        # ---------------------------------------------------------------------
+        ret, frame = cap.read()
+
+        # Si falla la lectura → salir
+        if not ret:
+            print("ERROR: No se pudo leer el frame")
+            break
+
+        # ---------------------------------------------------------------------
+        # Evaluamos iluminación
+        # ---------------------------------------------------------------------
+        info = evaluar_iluminacion(frame)
+
+        # ---------------------------------------------------------------------
+        # COLOR SEGÚN SEVERIDAD
+        #
+        # Verde   → bien
+        # Amarillo→ moderada
+        # Rojo    → crítica
+        # ---------------------------------------------------------------------
+        if info["level"] == "BIEN":
+            color = (0, 255, 0)
+
+        elif info["level"] == "MODERADA":
+            color = (0, 255, 255)
+
+        else:
+            color = (0, 0, 255)
+
+        # ---------------------------------------------------------------------
+        # Mostramos métricas en pantalla
+        # ---------------------------------------------------------------------
+        cv2.putText(
+            frame,
+            f"Brillo promedio: {info['brightness']:.1f}",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            color,
+            2
+        )
+
+        cv2.putText(
+            frame,
+            f"Desviacion std: {info['std_dev']:.1f}",
+            (10, 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            color,
+            2
+        )
+
+        cv2.putText(
+            frame,
+            f"Pixeles oscuros: {info['dark_ratio']*100:.1f}%",
+            (10, 90),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            color,
+            2
+        )
+
+        cv2.putText(
+            frame,
+            f"Nivel: {info['level']}",
+            (10, 125),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            color,
+            2
+        )
+
+        # ---------------------------------------------------------------------
+        # Mostramos ventana
+        # ---------------------------------------------------------------------
+        cv2.imshow("Evaluacion de Iluminacion", frame)
+
+        # ---------------------------------------------------------------------
+        # Salida con:
+        #
+        #   q
+        #   ESC
+        # ---------------------------------------------------------------------
+        key = cv2.waitKey(1) & 0xFF
+
+        if key == ord('q') or key == 27:
+            break
 
 
-# =============================================================================
-# LIBERAR RECURSOS
-# =============================================================================
-cap.release()
-cv2.destroyAllWindows()
+    # =========================================================================
+    # LIBERAR RECURSOS
+    # =========================================================================
+    cap.release()
+    cv2.destroyAllWindows()
