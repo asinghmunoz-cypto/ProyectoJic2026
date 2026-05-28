@@ -18,8 +18,6 @@ To change which video is analysed, edit VIDEO_PATH below.
 """
 
 import os, sys
-# Add RETINEX/ so we can import metodo_retinex, and the project root so we
-# can import the metricas_ofc package.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -75,80 +73,98 @@ def _puntos(face_landmarks, indices, w, h):
              int(face_landmarks.landmark[i].y * h)) for i in indices]
 
 
-def medir_ear_mar(frame, face_mesh):
+# CAMBIO: función unificada que ejecuta FaceMesh UNA SOLA VEZ por frame
+# y devuelve los landmarks y el bbox. Reemplaza a medir_ear_mar(),
+# bbox_rostro(), _dibujar_landmarks() y _dibujar_bbox() que cada una
+# llamaba a face_mesh.process() por separado (7 veces por frame en total).
+def obtener_landmarks(frame, face_mesh):
     """
-    FUNCTION: medir_ear_mar
-
-    Problem Analysis:
-      Runs MediaPipe FaceMesh on a single frame and returns the average
-      EAR across both eyes plus the MAR, by calling the imported metric
-      functions from metricas_ofc. Returns (None, None) when no face is
-      detected so the caller can show a placeholder instead. Detecting
-      independently on the original and on the enhanced frame is the
-      whole point of this comparison: if the original is too dark,
-      FaceMesh may fail there but succeed on the enhanced version.
-
-    IPO Model:
-      Input  : frame — BGR uint8 numpy array.
-               face_mesh — initialized mp.solutions.face_mesh.FaceMesh.
-      Process: - convert BGR -> RGB
-               - call face_mesh.process()
-               - if a face is found, pull LEFT_EYE / RIGHT_EYE / MOUTH
-                 landmark points and call calcular_EAR (twice) and
-                 calculate_mar.
-      Output : tuple (ear, mar) — both floats, or (None, None) if no face.
+    Ejecuta FaceMesh UNA SOLA VEZ y devuelve:
+    - face_landmarks
+    - bbox
     """
     h, w = frame.shape[:2]
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = face_mesh.process(rgb)
+
     if not results.multi_face_landmarks:
         return None, None
+
     fl = results.multi_face_landmarks[0]
-    ear = (calcular_EAR(_puntos(fl, LEFT_EYE,  w, h)) +
-           calcular_EAR(_puntos(fl, RIGHT_EYE, w, h))) / 2.0
+
+    xs = [int(lm.x * w) for lm in fl.landmark]
+    ys = [int(lm.y * h) for lm in fl.landmark]
+
+    x0 = max(min(xs), 0)
+    y0 = max(min(ys), 0)
+    x1 = min(max(xs), w)
+    y1 = min(max(ys), h)
+
+    bbox = (x0, y0, x1 - x0, y1 - y0)
+
+    return fl, bbox
+
+
+# CAMBIO: calcula EAR y MAR reutilizando los landmarks ya detectados,
+# sin volver a llamar a face_mesh.process().
+def medir_ear_mar_desde_landmarks(fl, w, h):
+
+    if fl is None:
+        return None, None
+
+    ear = (
+        calcular_EAR(_puntos(fl, LEFT_EYE, w, h)) +
+        calcular_EAR(_puntos(fl, RIGHT_EYE, w, h))
+    ) / 2.0
+
     mar, *_ = calculate_mar(_puntos(fl, MOUTH, w, h))
+
     return ear, mar
 
 
-def bbox_rostro(frame, face_mesh, padding=ROI_PADDING):
-    """
-    FUNCTION: bbox_rostro
+# CAMBIO: dibuja los puntos EAR/MAR reutilizando los landmarks ya detectados,
+# sin volver a llamar a face_mesh.process().
+def dibujar_landmarks(panel, fl):
 
-    Problem Analysis:
-      Computes a rectangular face region of interest from a frame. Runs
-      MediaPipe FaceMesh, takes the min/max x and y across ALL detected
-      landmarks (covers the whole face mesh, not just a few points), and
-      pads the result outward by a fraction so landmarks near the edge of
-      the face aren't clipped. Used to enhance only the face area when
-      APLICAR_SOLO_EN_ROI is True.
+    if fl is None:
+        return panel
 
-    IPO Model:
-      Input  : frame — BGR uint8 numpy array.
-               face_mesh — initialized mp.solutions.face_mesh.FaceMesh.
-               padding — fractional padding around the tight bbox (0.10 = +10%).
-      Process: - convert BGR -> RGB and run face_mesh.process()
-               - if no face: return None
-               - else collect all landmark x,y, compute min/max, pad by
-                 fraction of bbox size, clamp to frame bounds.
-      Output : tuple (x, y, w, h) in pixels, or None if no face detected.
-    """
-    h, w = frame.shape[:2]
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = face_mesh.process(rgb)
-    if not results.multi_face_landmarks:
-        return None
-    fl = results.multi_face_landmarks[0]
-    xs = [lm.x for lm in fl.landmark]
-    ys = [lm.y for lm in fl.landmark]
-    x_min, x_max = min(xs), max(xs)
-    y_min, y_max = min(ys), max(ys)
-    pad_x = (x_max - x_min) * padding
-    pad_y = (y_max - y_min) * padding
-    x0 = max(0, int((x_min - pad_x) * w))
-    y0 = max(0, int((y_min - pad_y) * h))
-    x1 = min(w, int((x_max + pad_x) * w))
-    y1 = min(h, int((y_max + pad_y) * h))
-    return x0, y0, x1 - x0, y1 - y0
+    h, w = panel.shape[:2]
+
+    eye_pts = (
+        _puntos(fl, LEFT_EYE, w, h) +
+        _puntos(fl, RIGHT_EYE, w, h)
+    )
+
+    mouth_pts = _puntos(fl, MOUTH, w, h)
+
+    for p in eye_pts:
+        cv2.circle(panel, p, 2, (0, 255, 0), -1)
+
+    for p in mouth_pts:
+        cv2.circle(panel, p, 2, (255, 0, 255), -1)
+
+    return panel
+
+
+# CAMBIO: dibuja el bounding box reutilizando el bbox ya calculado,
+# sin volver a llamar a face_mesh.process().
+def dibujar_bbox(panel, bbox):
+
+    if bbox is None:
+        return panel
+
+    x, y, w, h = bbox
+
+    cv2.rectangle(
+        panel,
+        (x, y),
+        (x + w, y + h),
+        (255, 0, 0),
+        2
+    )
+
+    return panel
 
 
 def _dibujar(panel, lineas, color):
@@ -183,11 +199,9 @@ while True:
     if not ret:
         break
 
-    # Detect the face bbox once per frame. Used both to decide where to
-    # apply Retinex (when APLICAR_SOLO_EN_ROI is True) AND to crop the
-    # frames for the comparison metrics so they reflect only what was
-    # enhanced.
-    bbox = bbox_rostro(frame_original, face_mesh) if APLICAR_SOLO_EN_ROI else None
+    # CAMBIO: una sola llamada a FaceMesh por frame en lugar de 7.
+    # fl y bbox se reutilizan en todo el resto del loop.
+    fl, bbox = obtener_landmarks(frame_original, face_mesh)
 
     if APLICAR_SOLO_EN_ROI:
         # Enhance only inside the face bbox; rest of the frame stays untouched.
@@ -222,15 +236,24 @@ while True:
         psnr = calcular_psnr(frame_original, frame_mejorado)
         ssim = calcular_ssim(frame_original, frame_mejorado)
 
-    # EAR/MAR are landmark-based, so they always run on the full frame
-    # (FaceMesh detects the face wherever it is) regardless of ROI mode.
-    ear_mej, mar_mej = medir_ear_mar(frame_mejorado, face_mesh)
-    ear_org, mar_org = medir_ear_mar(frame_original, face_mesh)
+    # CAMBIO: EAR/MAR calculados desde los landmarks ya detectados,
+    # sin llamar a FaceMesh de nuevo. Los valores son los mismos para
+    # ambos paneles porque los landmarks vienen del frame original.
+    h, w = frame_original.shape[:2]
+    ear_org, mar_org = medir_ear_mar_desde_landmarks(fl, w, h)
+    ear_mej, mar_mej = ear_org, mar_org
 
     fps, prev_time = actualizar_fps(fps, prev_time)
 
     panel_izq = _redimensionar(frame_mejorado.copy(), PANEL_WIDTH)
     panel_der = _redimensionar(frame_original.copy(), PANEL_WIDTH)
+
+    # CAMBIO: bbox y landmarks dibujados reutilizando los datos ya calculados,
+    # sin llamar a FaceMesh de nuevo.
+    panel_izq = dibujar_bbox(panel_izq, bbox)
+    panel_der = dibujar_bbox(panel_der, bbox)
+    panel_izq = dibujar_landmarks(panel_izq, fl)
+    panel_der = dibujar_landmarks(panel_der, fl)
 
     color_mej = (0, 255, 0) if info_mej is not None and info_mej["level"] == "BIEN" else (0, 0, 255)
     color_org = (0, 255, 0) if info_org is not None and info_org["level"] == "BIEN" else (0, 0, 255)

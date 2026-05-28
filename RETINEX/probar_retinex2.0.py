@@ -151,6 +151,45 @@ def bbox_rostro(frame, face_mesh, padding=ROI_PADDING):
     return x0, y0, x1 - x0, y1 - y0
 
 
+# CAMBIO: nueva función para dibujar los puntos EAR y MAR sobre un panel,
+# igual a como lo hace el código de retinex (círculos verdes para ojos,
+# magenta para boca). Devuelve el panel con los puntos ya dibujados.
+def _dibujar_landmarks(panel, face_mesh):
+    h, w = panel.shape[:2]
+    rgb = cv2.cvtColor(panel, cv2.COLOR_BGR2RGB)
+    results = face_mesh.process(rgb)
+    if not results.multi_face_landmarks:
+        return panel
+    fl = results.multi_face_landmarks[0]
+
+    eye_pts   = _puntos(fl, LEFT_EYE,  w, h) + _puntos(fl, RIGHT_EYE, w, h)
+    mouth_pts = _puntos(fl, MOUTH, w, h)
+
+    for p in eye_pts:
+        cv2.circle(panel, p, 2, (0, 255, 0), -1)
+    for p in mouth_pts:
+        cv2.circle(panel, p, 2, (255, 0, 255), -1)
+
+    return panel
+
+
+# CAMBIO: nueva función para dibujar el bounding box de la cara sobre un panel,
+# igual a como lo hace el código de retinex (rectángulo azul).
+def _dibujar_bbox(panel, face_mesh):
+    h, w = panel.shape[:2]
+    rgb = cv2.cvtColor(panel, cv2.COLOR_BGR2RGB)
+    results = face_mesh.process(rgb)
+    if not results.multi_face_landmarks:
+        return panel
+    fl = results.multi_face_landmarks[0]
+    xs = [int(lm.x * w) for lm in fl.landmark]
+    ys = [int(lm.y * h) for lm in fl.landmark]
+    x0, x1 = max(min(xs), 0), min(max(xs), w)
+    y0, y1 = max(min(ys), 0), min(max(ys), h)
+    cv2.rectangle(panel, (x0, y0), (x1, y1), (255, 0, 0), 2)
+    return panel
+
+
 def _dibujar(panel, lineas, color):
     for i, texto in enumerate(lineas):
         cv2.putText(panel, texto, (10, 30 + 28 * i),
@@ -231,6 +270,14 @@ while True:
 
     panel_izq = _redimensionar(frame_mejorado.copy(), PANEL_WIDTH)
     panel_der = _redimensionar(frame_original.copy(), PANEL_WIDTH)
+
+    # CAMBIO: se dibujan el bbox de la cara y los puntos EAR/MAR
+    # en ambos paneles antes de escribir el texto encima,
+    # igual a como lo hace el código de retinex.
+    panel_izq = _dibujar_bbox(panel_izq, face_mesh)
+    panel_der = _dibujar_bbox(panel_der, face_mesh)
+    panel_izq = _dibujar_landmarks(panel_izq, face_mesh)
+    panel_der = _dibujar_landmarks(panel_der, face_mesh)
 
     color_mej = (0, 255, 0) if info_mej is not None and info_mej["level"] == "BIEN" else (0, 0, 255)
     color_org = (0, 255, 0) if info_org is not None and info_org["level"] == "BIEN" else (0, 0, 255)
