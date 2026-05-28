@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import mediapipe as mp
 import time
+import os
 
 # =====================================================
 # RETINEX + ROI FACIAL + EAR + MAR
@@ -364,9 +365,14 @@ def detect_drowsiness(frame):
 # VIDEO
 # =====================================================
 
-cap = cv2.VideoCapture(
-    "video MAR.mp4"
+VIDEO_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "..",
+    "data",
+    "video_MAR.mp4"
 )
+
+cap = cv2.VideoCapture(VIDEO_PATH)
 
 prev_time = time.time()
 
