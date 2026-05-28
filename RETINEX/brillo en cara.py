@@ -1,3 +1,4 @@
+import os
 import cv2
 import numpy as np
 import mediapipe as mp
@@ -131,7 +132,15 @@ def detect_drowsiness(frame):
 # VIDEO
 # =====================================================
 
-cap = cv2.VideoCapture("Prueba 28s.mp4")
+VIDEO_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data", "prueba_28s.mp4",
+)
+
+cap = cv2.VideoCapture(VIDEO_PATH)
+if not cap.isOpened():
+    print(f"ERROR: could not open video: {VIDEO_PATH}")
+    exit()
 
 prev_time = time.time()
 

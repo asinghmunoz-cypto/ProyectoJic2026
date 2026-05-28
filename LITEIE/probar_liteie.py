@@ -69,7 +69,7 @@ CSV_OUTPUT_PATH:      file path where the per-frame metrics are written
                       script's location so the CSV always lands in LITEIE/
                       no matter what directory you ran from.
 """
-VIDEO_PATH          = "data/vid2eval.mp4"
+VIDEO_PATH          = "data/prueba_28s.mp4"
 PANEL_WIDTH         = 640
 APLICAR_SOLO_EN_ROI = True
 ROI_PADDING         = 0.10
