@@ -39,16 +39,33 @@ from metricas_ofc.fps         import actualizar_fps
 """
 CONSTANTS
 
-VIDEO_PATH:  change this to point at the video file you want to analyse.
-             accepts any format OpenCV can decode (.mp4, .avi, .mov, ...).
-             can be absolute or relative to where you run the script from.
+VIDEO_PATH:           change this to point at the video file you want to
+                      analyse. accepts any format OpenCV can decode (.mp4,
+                      .avi, .mov, ...). can be absolute or relative to
+                      where you run the script from.
 
-PANEL_WIDTH: width (in pixels) of each side-by-side panel. the panel height
-             is derived from the source aspect ratio. lower it if your
-             monitor cannot fit both panels horizontally.
+PANEL_WIDTH:          width (in pixels) of each side-by-side panel. the
+                      panel height is derived from the source aspect ratio.
+                      lower it if your monitor cannot fit both panels
+                      horizontally.
+
+APLICAR_SOLO_EN_ROI:  if True, LiteIE is only applied inside the face
+                      bounding box detected by MediaPipe (the only region
+                      where the drowsiness metrics actually look). The rest
+                      of the frame stays untouched. If no face is detected
+                      in a given frame, no enhancement is applied that frame.
+                      If False, LiteIE is applied to the entire frame.
+
+ROI_PADDING:          extra margin around the face bbox, as a fraction of
+                      the bbox size (0.10 = +10%). only used when
+                      APLICAR_SOLO_EN_ROI is True. wider padding catches
+                      landmarks near the edge of the face that might
+                      otherwise sit just outside the crop.
 """
-VIDEO_PATH  = "video.mp4"
-PANEL_WIDTH = 640
+VIDEO_PATH          = "data/vid2eval.mp4"
+PANEL_WIDTH         = 640
+APLICAR_SOLO_EN_ROI = True
+ROI_PADDING         = 0.10
 
 
 def _puntos(face_landmarks, indices, w, h):
@@ -92,6 +109,47 @@ def medir_ear_mar(frame, face_mesh):
     return ear, mar
 
 
+def bbox_rostro(frame, face_mesh, padding=ROI_PADDING):
+    """
+    FUNCTION: bbox_rostro
+
+    Problem Analysis:
+      Computes a rectangular face region of interest from a frame. Runs
+      MediaPipe FaceMesh, takes the min/max x and y across ALL detected
+      landmarks (covers the whole face mesh, not just a few points), and
+      pads the result outward by a fraction so landmarks near the edge of
+      the face aren't clipped. Used to enhance only the face area when
+      APLICAR_SOLO_EN_ROI is True.
+
+    IPO Model:
+      Input  : frame — BGR uint8 numpy array.
+               face_mesh — initialized mp.solutions.face_mesh.FaceMesh.
+               padding — fractional padding around the tight bbox (0.10 = +10%).
+      Process: - convert BGR -> RGB and run face_mesh.process()
+               - if no face: return None
+               - else collect all landmark x,y, compute min/max, pad by
+                 fraction of bbox size, clamp to frame bounds.
+      Output : tuple (x, y, w, h) in pixels, or None if no face detected.
+    """
+    h, w = frame.shape[:2]
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = face_mesh.process(rgb)
+    if not results.multi_face_landmarks:
+        return None
+    fl = results.multi_face_landmarks[0]
+    xs = [lm.x for lm in fl.landmark]
+    ys = [lm.y for lm in fl.landmark]
+    x_min, x_max = min(xs), max(xs)
+    y_min, y_max = min(ys), max(ys)
+    pad_x = (x_max - x_min) * padding
+    pad_y = (y_max - y_min) * padding
+    x0 = max(0, int((x_min - pad_x) * w))
+    y0 = max(0, int((y_min - pad_y) * h))
+    x1 = min(w, int((x_max + pad_x) * w))
+    y1 = min(h, int((y_max + pad_y) * h))
+    return x0, y0, x1 - x0, y1 - y0
+
+
 def _dibujar(panel, lineas, color):
     for i, texto in enumerate(lineas):
         cv2.putText(panel, texto, (10, 30 + 28 * i),
@@ -124,14 +182,47 @@ while True:
     if not ret:
         break
 
-    frame_mejorado = aplicar_liteie(frame_original)
+    # Detect the face bbox once per frame. Used both to decide where to
+    # apply LiteIE (when APLICAR_SOLO_EN_ROI is True) AND to crop the frames
+    # for the comparison metrics so they reflect only what was enhanced.
+    bbox = bbox_rostro(frame_original, face_mesh) if APLICAR_SOLO_EN_ROI else None
 
-    info_mej = evaluar_iluminacion(frame_mejorado)
+    if APLICAR_SOLO_EN_ROI:
+        # Enhance only inside the face bbox; rest of the frame stays untouched.
+        # If no face is detected, the frame is left as the original.
+        frame_mejorado = frame_original.copy()
+        if bbox is not None:
+            x, y, ww, hh = bbox
+            roi = frame_original[y:y+hh, x:x+ww]
+            if roi.size > 0:
+                frame_mejorado[y:y+hh, x:x+ww] = aplicar_liteie(roi)
+    else:
+        frame_mejorado = aplicar_liteie(frame_original)
+
+    # Comparison metrics (illumination / PSNR / SSIM) operate on the region
+    # that was actually enhanced: full frame in normal mode, just the face
+    # crop in ROI mode. In ROI mode with no face detected the metrics are
+    # skipped for that frame (the panels show "--").
+    if APLICAR_SOLO_EN_ROI and bbox is not None:
+        x, y, ww, hh = bbox
+        crop_org = frame_original[y:y+hh, x:x+ww]
+        crop_mej = frame_mejorado[y:y+hh, x:x+ww]
+        info_org = evaluar_iluminacion(crop_org)
+        info_mej = evaluar_iluminacion(crop_mej)
+        psnr = calcular_psnr(crop_org, crop_mej)
+        ssim = calcular_ssim(crop_org, crop_mej)
+    elif APLICAR_SOLO_EN_ROI:
+        info_org = info_mej = None
+        psnr = ssim = None
+    else:
+        info_org = evaluar_iluminacion(frame_original)
+        info_mej = evaluar_iluminacion(frame_mejorado)
+        psnr = calcular_psnr(frame_original, frame_mejorado)
+        ssim = calcular_ssim(frame_original, frame_mejorado)
+
+    # EAR/MAR are landmark-based, so they always run on the full frame
+    # (FaceMesh detects the face wherever it is) regardless of ROI mode.
     ear_mej, mar_mej = medir_ear_mar(frame_mejorado, face_mesh)
-    psnr = calcular_psnr(frame_original, frame_mejorado)
-    ssim = calcular_ssim(frame_original, frame_mejorado)
-
-    info_org = evaluar_iluminacion(frame_original)
     ear_org, mar_org = medir_ear_mar(frame_original, face_mesh)
 
     fps, prev_time = actualizar_fps(fps, prev_time)
@@ -139,23 +230,31 @@ while True:
     panel_izq = _redimensionar(frame_mejorado.copy(), PANEL_WIDTH)
     panel_der = _redimensionar(frame_original.copy(), PANEL_WIDTH)
 
-    color_mej = (0, 255, 0) if info_mej["level"] == "BIEN" else (0, 0, 255)
-    color_org = (0, 255, 0) if info_org["level"] == "BIEN" else (0, 0, 255)
+    color_mej = (0, 255, 0) if info_mej is not None and info_mej["level"] == "BIEN" else (0, 0, 255)
+    color_org = (0, 255, 0) if info_org is not None and info_org["level"] == "BIEN" else (0, 0, 255)
 
-    psnr_txt = "inf" if psnr == float("inf") else f"{psnr:.2f} dB"
+    if psnr is None:
+        psnr_txt = "--"
+    elif psnr == float("inf"):
+        psnr_txt = "inf"
+    else:
+        psnr_txt = f"{psnr:.2f} dB"
+    ssim_txt = "--" if ssim is None else f"{ssim:.4f}"
+
     lineas_izq = [
         "ENHANCED (LiteIE)",
-        f"Illum: {info_mej['brightness']:.1f}  ({info_mej['level']})",
-        f"Dark%: {info_mej['dark_ratio']*100:.1f}%",
+        f"Illum: {info_mej['brightness']:.1f}  ({info_mej['level']})" if info_mej is not None else "Illum: --",
+        f"Dark%: {info_mej['dark_ratio']*100:.1f}%" if info_mej is not None else "Dark%: --",
         f"EAR:   {ear_mej:.3f}" if ear_mej is not None else "EAR:   --",
         f"MAR:   {mar_mej:.3f}" if mar_mej is not None else "MAR:   --",
         f"PSNR:  {psnr_txt}",
-        f"SSIM:  {ssim:.4f}",
+        f"SSIM:  {ssim_txt}",
         f"FPS:   {fps:.1f}",
     ]
     lineas_der = [
         "ORIGINAL",
-        f"Illum: {info_org['brightness']:.1f}  ({info_org['level']})",
+        f"Illum: {info_org['brightness']:.1f}  ({info_org['level']})" if info_org is not None else "Illum: --",
+        f"Dark%: {info_org['dark_ratio']*100:.1f}%" if info_org is not None else "Dark%: --",
         f"EAR:   {ear_org:.3f}" if ear_org is not None else "EAR:   --",
         f"MAR:   {mar_org:.3f}" if mar_org is not None else "MAR:   --",
     ]

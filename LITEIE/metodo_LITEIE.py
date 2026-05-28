@@ -13,10 +13,12 @@ import model
 CONSTANTS
 
 MODEL_PATH: path to the trained LiteIE checkpoint (.pth file).
-            relative to the LITEIE folder when running from there.
+            resolved relative to this file's location (LITEIE/) so it works
+            no matter what directory you run from.
             replace this if you train a new model or move the weights.
 """
-MODEL_PATH = "snapshots/epoth_199.pth"
+MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "snapshots", "epoth_199.pth")
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
