@@ -22,6 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import time
+import csv
+
 import cv2
 import mediapipe as mp
 
@@ -65,6 +67,8 @@ VIDEO_PATH          = "data/vid2eval.mp4"
 PANEL_WIDTH         = 640
 APLICAR_SOLO_EN_ROI = True
 ROI_PADDING         = 0.10
+CSV_OUTPUT_PATH     = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "resultados_retinex.csv")
 
 
 def _puntos(face_landmarks, indices, w, h):
@@ -197,6 +201,10 @@ if not cap.isOpened():
 fps = 0.0
 prev_time = time.time()
 
+# Accumulates one dict per processed frame. Dumped to CSV after the loop ends.
+metricas_por_frame = []
+frame_idx = 0
+
 while True:
     ret, frame_original = cap.read()
     if not ret:
@@ -240,6 +248,24 @@ while True:
     ear_mej, mar_mej = ear_org, mar_org
 
     fps, prev_time = actualizar_fps(fps, prev_time)
+
+    metricas_por_frame.append({
+        "frame":       frame_idx,
+        "illum_org":   info_org["brightness"]       if info_org is not None else None,
+        "darkpct_org": info_org["dark_ratio"] * 100 if info_org is not None else None,
+        "level_org":   info_org["level"]            if info_org is not None else None,
+        "ear_org":     ear_org,
+        "mar_org":     mar_org,
+        "illum_mej":   info_mej["brightness"]       if info_mej is not None else None,
+        "darkpct_mej": info_mej["dark_ratio"] * 100 if info_mej is not None else None,
+        "level_mej":   info_mej["level"]            if info_mej is not None else None,
+        "ear_mej":     ear_mej,
+        "mar_mej":     mar_mej,
+        "psnr":        psnr,
+        "ssim":        ssim,
+        "fps":         fps,
+    })
+    frame_idx += 1
 
     panel_izq = _redimensionar(frame_mejorado.copy(), PANEL_WIDTH)
     panel_der = _redimensionar(frame_original.copy(), PANEL_WIDTH)
@@ -291,3 +317,40 @@ while True:
 
 cap.release()
 cv2.destroyAllWindows()
+
+
+# =============================================================================
+# AFTER THE RUN: dump per-frame metrics to CSV and print averages on stdout.
+# =============================================================================
+
+if metricas_por_frame:
+
+    # ---- CSV dump ---------------------------------------------------------
+    with open(CSV_OUTPUT_PATH, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=list(metricas_por_frame[0].keys()))
+        writer.writeheader()
+        writer.writerows(metricas_por_frame)
+    print(f"\nCSV saved to: {CSV_OUTPUT_PATH}")
+
+    # ---- Averages of numeric columns --------------------------------------
+    # Skip None values (no face detected in ROI mode) and +/-inf values (PSNR
+    # of identical frames). Categorical columns (level_org, level_mej) are
+    # not averaged — they are not numbers.
+    def _promedio(col):
+        valores = [r[col] for r in metricas_por_frame
+                   if isinstance(r[col], (int, float))
+                   and r[col] not in (float("inf"), float("-inf"))]
+        return (sum(valores) / len(valores)) if valores else None
+
+    columnas_numericas = [
+        "illum_org", "darkpct_org", "ear_org", "mar_org",
+        "illum_mej", "darkpct_mej", "ear_mej", "mar_mej",
+        "psnr", "ssim", "fps",
+    ]
+
+    print(f"\n=== AVERAGES OVER {len(metricas_por_frame)} FRAMES ===")
+    for c in columnas_numericas:
+        v = _promedio(c)
+        print(f"  {c:14s}: {'--' if v is None else f'{v:.4f}'}")
+else:
+    print("\nNo frames processed — nothing to save.")
