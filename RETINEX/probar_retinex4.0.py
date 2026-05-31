@@ -63,7 +63,7 @@ ROI_PADDING:          extra margin around the face bbox, as a fraction of
                       landmarks near the edge of the face that might
                       otherwise sit just outside the crop.
 """
-VIDEO_PATH          = "data/videoMiguelitoSan.mp4"
+VIDEO_PATH          = "data/vid2eval.mp4"
 PANEL_WIDTH         = 640
 APLICAR_SOLO_EN_ROI = True
 ROI_PADDING         = 0.10
