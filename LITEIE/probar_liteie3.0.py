@@ -201,11 +201,15 @@ while True:
         psnr = calcular_psnr(frame_original, frame_mejorado)
         ssim = calcular_ssim(frame_original, frame_mejorado)
 
-    # CAMBIO: EAR/MAR calculados desde los landmarks ya detectados,
-    # sin llamar a FaceMesh de nuevo.
+    # EAR/MAR del original desde los landmarks ya detectados. Para el frame
+    # mejorado corremos FaceMesh una segunda vez, de modo que EAR/MAR reflejen
+    # si la mejora de iluminacion ayuda a la deteccion. Son 2 llamadas a
+    # FaceMesh por frame en total (una sobre el original, una sobre el mejorado),
+    # frente a las ~7 que hacian las versiones viejas.
     h, w = frame_original.shape[:2]
     ear_org, mar_org = medir_ear_mar_desde_landmarks(fl, w, h)
-    ear_mej, mar_mej = ear_org, mar_org
+    fl_mej, _ = obtener_landmarks(frame_mejorado, face_mesh)
+    ear_mej, mar_mej = medir_ear_mar_desde_landmarks(fl_mej, w, h)
 
     fps, prev_time = actualizar_fps(fps, prev_time)
 
