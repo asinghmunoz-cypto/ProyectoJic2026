@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import cv2; cap = cv2.VideoCapture\\('c:/Users/asing/.AAJIC/ProyectoJic2026/data/prueba_39s.mp4'\\); print\\(f'{int\\(cap.get\\(3\\)\\)}x{int\\(cap.get\\(4\\)\\)}'\\); cap.release\\(\\)\")"
+    ]
+  }
+}
