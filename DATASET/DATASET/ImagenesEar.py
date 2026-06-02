@@ -1,3 +1,4 @@
+import csv
 import cv2
 import mediapipe as mp
 import math
@@ -14,10 +15,8 @@ CARPETA_DESTINO = r"C:\Users\MovilCity\Downloads\Ojos_abiertosEAR"
 
 os.makedirs(CARPETA_DESTINO, exist_ok=True)
 
-EXCEL_SALIDA = os.path.join(
-    CARPETA_DESTINO,
-    "EAR_resultados.xlsx"
-)
+EXCEL_SALIDA = os.path.join(CARPETA_DESTINO, "EAR_resultados.xlsx")
+CSV_SALIDA   = os.path.join(CARPETA_DESTINO, "EAR_resultados.csv")
 
 # ==========================================
 # LANDMARKS DE LOS OJOS
@@ -54,8 +53,9 @@ def calcular_EAR(puntos):
 wb = Workbook()
 ws = wb.active
 ws.title = "EAR"
-
 ws.append(["Imagen", "EAR"])
+
+filas_csv = []
 
 # ==========================================
 # MEDIAPIPE
@@ -107,10 +107,8 @@ with mp_face_mesh.FaceMesh(
 
             print(f"Rostro no detectado: {archivo}")
 
-            ws.append([
-                archivo,
-                "No detectado"
-            ])
+            ws.append([archivo, "No detectado"])
+            filas_csv.append({"imagen": archivo, "EAR": "No detectado"})
 
             continue
 
@@ -184,10 +182,8 @@ with mp_face_mesh.FaceMesh(
         # AGREGAR AL EXCEL
         # ==================================
 
-        ws.append([
-            archivo,
-            round(ear, 6)
-        ])
+        ws.append([archivo, round(ear, 6)])
+        filas_csv.append({"imagen": archivo, "EAR": round(ear, 6)})
 
         print(
             f"{archivo} -> EAR = {ear:.6f}"
@@ -199,12 +195,16 @@ with mp_face_mesh.FaceMesh(
 
 wb.save(EXCEL_SALIDA)
 
+with open(CSV_SALIDA, "w", newline="", encoding="utf-8") as f:
+    writer = csv.DictWriter(f, fieldnames=["imagen", "EAR"])
+    writer.writeheader()
+    writer.writerows(filas_csv)
+
 print("\n====================================")
 print("PROCESO FINALIZADO")
 print("====================================")
 print(f"Imágenes procesadas: {total}")
 print(f"Rostros detectados: {detectadas}")
-print(f"Excel guardado en:")
-print(EXCEL_SALIDA)
-print(f"\nImágenes guardadas en:")
-print(CARPETA_DESTINO)
+print(f"Excel guardado en : {EXCEL_SALIDA}")
+print(f"CSV guardado en   : {CSV_SALIDA}")
+print(f"Imágenes guardadas en: {CARPETA_DESTINO}")
