@@ -188,6 +188,17 @@ face_mesh = mp.solutions.face_mesh.FaceMesh(
     min_tracking_confidence=0.5,
 )
 
+# Segundo FaceMesh para evaluar el frame MEJORADO de forma independiente.
+# static_image_mode=True fuerza detección fresca en cada llamada, igual que
+# hace RETINEX de facto (su mejora es tan intensa que MediaPipe re-detecta).
+# Sin esto, el tracking del objeto anterior devuelve los mismos landmarks.
+face_mesh_eval = mp.solutions.face_mesh.FaceMesh(
+    static_image_mode=True,
+    max_num_faces=1,
+    refine_landmarks=True,
+    min_detection_confidence=0.5,
+)
+
 cap = cv2.VideoCapture(VIDEO_PATH)
 if not cap.isOpened():
     print(f"ERROR: could not open video: {VIDEO_PATH}")
@@ -243,7 +254,7 @@ while True:
     # frente a las ~7 que hacian las versiones viejas.
     h, w = frame_original.shape[:2]
     ear_org, mar_org = medir_ear_mar_desde_landmarks(fl, w, h)
-    fl_mej, _ = obtener_landmarks(frame_mejorado, face_mesh)
+    fl_mej, _ = obtener_landmarks(frame_mejorado, face_mesh_eval)
     ear_mej, mar_mej = medir_ear_mar_desde_landmarks(fl_mej, w, h)
 
     fps, prev_time = actualizar_fps(fps, prev_time)
@@ -314,6 +325,8 @@ while True:
 
 cap.release()
 cv2.destroyAllWindows()
+face_mesh.close()
+face_mesh_eval.close()
 
 
 # =============================================================================
