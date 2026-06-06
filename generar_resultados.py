@@ -61,17 +61,22 @@ from metricas_ofc.ear import calcular_EAR, LEFT_EYE, RIGHT_EYE
 
 NIVELES = ["B5", "B10", "B15", "B25", "B40"]
 
-# Un bloque por dataset. dark_tpl usa {n} = numero del nivel (5, 10, ...).
+# Un bloque por dataset.
+#   dark_tpl usa {n} = numero del nivel (5, 10, ...).
+#   mejorada_tpl usa {metodo} y {nivel} (ej. CLAHE, B5) -> carpeta donde se
+#   guardan las imagenes mejoradas si se pasa --guardar-imagenes.
 DATASETS = [
     {
         "estado": "cerrado",
         "ref":     "dataset1/ojoscerrados_500",
         "dark_tpl": "dataset1/ojoscerrados_B{n}",
+        "mejorada_tpl": "dataset1/ojoscerrados_{metodo}/{nivel}",
     },
     {
         "estado": "abierto",
         "ref":     "dataset2/Ojos_abiertos500",
         "dark_tpl": "dataset2/ojosabiertos_B{n}",
+        "mejorada_tpl": "dataset2/ojosabiertos_{metodo}/{nivel}",
     },
 ]
 
@@ -226,8 +231,9 @@ def porcentaje_error(valor, referencia):
 
 
 def procesar(metodo_nombre, aplicar, face_mesh, estado,
-             img_ref, ear_ref, nivel, ruta_dark, nombre):
-    """Devuelve una fila (dict) o None si la imagen oscura no existe/no carga."""
+             img_ref, ear_ref, nivel, ruta_dark, nombre, ruta_guardar=None):
+    """Devuelve una fila (dict) o None si la imagen oscura no existe/no carga.
+    Si `ruta_guardar` no es None, guarda ahi la imagen mejorada."""
     if not os.path.exists(ruta_dark):
         return None
     img_dark = cv2.imread(ruta_dark)
@@ -240,6 +246,11 @@ def procesar(metodo_nombre, aplicar, face_mesh, estado,
     dt = time.perf_counter() - t0
     fps = (1.0 / dt) if dt > 0 else float("inf")
     flops = medir_flops(metodo_nombre, img_dark)
+
+    # --- Guardar imagen mejorada (opcional) --------------------------------
+    if ruta_guardar is not None:
+        os.makedirs(os.path.dirname(ruta_guardar), exist_ok=True)
+        cv2.imwrite(ruta_guardar, img_mej)
 
     # --- Metricas de iluminacion -------------------------------------------
     ilum_ref = evaluar_iluminacion(img_ref)
@@ -297,7 +308,7 @@ def _media(valores):
     return (sum(limpios) / len(limpios)) if limpios else float("nan")
 
 
-def imprimir_resumen(filas):
+def imprimir_resumen(filas, niveles=NIVELES):
     print("\n" + "=" * 78)
     print("RESUMEN POR NIVEL DE BRILLO")
     print("=" * 78)
@@ -305,7 +316,7 @@ def imprimir_resumen(filas):
           f"{'EAR_err_mej%':>12} | {'tasa_det':>8}")
     print("-" * 78)
 
-    for nivel in NIVELES:
+    for nivel in niveles:
         sub = [f for f in filas if f["nivel_brillo"] == nivel]
         if not sub:
             continue
@@ -329,15 +340,45 @@ def main():
     parser.add_argument("--metodo", required=True,
                         choices=["CLAHE", "GAMMA", "RETINEX", "LiteIE"],
                         help="Metodo de mejora a evaluar.")
+    parser.add_argument("--niveles", nargs="+", default=NIVELES,
+                        metavar="NIVEL",
+                        help="Niveles de brillo a procesar (ej. B5 B10). "
+                             "Por defecto todos: " + " ".join(NIVELES) + ".")
+    parser.add_argument("--guardar-imagenes", action="store_true",
+                        help="Guarda las imagenes mejoradas en "
+                             "dataset{1,2}/<estado>_<METODO>/<NIVEL>/.")
     args = parser.parse_args()
     metodo_nombre = args.metodo
 
+    # Normalizar y validar los niveles pedidos (acepta 'b5' o 'B5').
+    niveles_sel = []
+    for nv in args.niveles:
+        nv = nv.upper()
+        if not nv.startswith("B"):
+            nv = "B" + nv          # admite '5' -> 'B5'
+        if nv not in NIVELES:
+            parser.error(f"Nivel invalido: {nv}. Validos: {', '.join(NIVELES)}")
+        if nv not in niveles_sel:
+            niveles_sel.append(nv)
+    # Mantener el orden canonico de NIVELES.
+    niveles_sel = [n for n in NIVELES if n in niveles_sel]
+
     print(f"Cargando metodo: {metodo_nombre} ...")
+    print(f"Niveles a procesar: {' '.join(niveles_sel)}")
+    if args.guardar_imagenes:
+        print("Se guardaran las imagenes mejoradas.")
     aplicar = cargar_metodo(metodo_nombre)
 
     carpeta_salida = os.path.join(RAIZ, "resultados")
     os.makedirs(carpeta_salida, exist_ok=True)
-    ruta_csv = os.path.join(carpeta_salida, f"resultados_{metodo_nombre}.csv")
+    # Si no se procesan todos los niveles, el nombre del CSV lo refleja para no
+    # sobrescribir un run completo (ej. resultados_CLAHE_B5.csv).
+    if niveles_sel == NIVELES:
+        ruta_csv = os.path.join(carpeta_salida, f"resultados_{metodo_nombre}.csv")
+    else:
+        sufijo = "_".join(niveles_sel)
+        ruta_csv = os.path.join(carpeta_salida,
+                                f"resultados_{metodo_nombre}_{sufijo}.csv")
 
     filas = []
 
@@ -360,7 +401,8 @@ def main():
                              if n.lower().endswith(EXTS))
 
             print(f"\nDataset '{estado}': {len(nombres)} imagenes ref, "
-                  f"{len(NIVELES)} niveles -> {len(nombres) * len(NIVELES)} filas max.")
+                  f"{len(niveles_sel)} niveles -> "
+                  f"{len(nombres) * len(niveles_sel)} filas max.")
 
             barra = tqdm(nombres, desc=f"[{metodo_nombre}/{estado}]", unit="img")
             for nombre in barra:
@@ -374,13 +416,21 @@ def main():
                 if not det_ref or ear_ref is None:
                     continue
 
-                for nivel in NIVELES:
+                for nivel in niveles_sel:
                     n = nivel[1:]  # "B5" -> "5"
                     carpeta_dark = os.path.join(RAIZ, ds["dark_tpl"].format(n=n))
                     ruta_dark = os.path.join(carpeta_dark, nombre)
 
+                    ruta_guardar = None
+                    if args.guardar_imagenes:
+                        carpeta_mej = os.path.join(
+                            RAIZ, ds["mejorada_tpl"].format(
+                                metodo=metodo_nombre, nivel=nivel))
+                        ruta_guardar = os.path.join(carpeta_mej, nombre)
+
                     fila = procesar(metodo_nombre, aplicar, face_mesh, estado,
-                                    img_ref, ear_ref, nivel, ruta_dark, nombre)
+                                    img_ref, ear_ref, nivel, ruta_dark, nombre,
+                                    ruta_guardar)
                     if fila is not None:
                         filas.append(fila)
 
@@ -393,7 +443,7 @@ def main():
     print(f"\nCSV guardado: {ruta_csv}")
     print(f"Filas escritas: {len(filas)}")
 
-    imprimir_resumen(filas)
+    imprimir_resumen(filas, niveles_sel)
 
 
 if __name__ == "__main__":
