@@ -1,0 +1,25 @@
+# ProyectoJic2026 - Dependencias
+# Python 3.11.9
+# Generado a partir del entorno real donde se corrieron los experimentos.
+#
+# NOTA GPU: torch/torchvision son builds con CUDA 12.4 (+cu124).
+# El metodo LITEIE corre en GPU (NVIDIA RTX 3060, 12 GB).
+# El resto de metodos (CLAHE, GAMMA, RETINEX) son OpenCV/CPU.
+
+numpy==2.4.3
+opencv-python==4.13.0.92
+opencv-contrib-python==4.13.0.92
+mediapipe==0.10.14
+scipy==1.17.1
+pillow==12.2.0
+matplotlib==3.10.9
+tqdm==4.67.3
+
+# Deep learning (metodo LITEIE) - builds con CUDA 12.4
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+thop==0.1.1.post2209072238
+
+# Lectura/escritura de Excel (scripts calcular_ear_*.py)
+# No estaba instalado en el entorno actual; agregar si se reusan esos scripts.
+openpyxl

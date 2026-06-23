@@ -96,7 +96,7 @@ COLUMNAS = [
     "error_brillo_pct",
     "ear_mejorada", "ear_oscura",
     "ear_error_mej_pct", "ear_error_osc_pct",
-    "deteccion_ref", "deteccion_mejorada",
+    "deteccion_ref", "deteccion_mejorada", "deteccion_ojos",
     "fps", "flops",
 ]
 
@@ -293,7 +293,11 @@ def procesar(metodo_nombre, aplicar, face_mesh, estado,
         "ear_error_mej_pct": round(porcentaje_error(ear_mej, ear_ref), 4),
         "ear_error_osc_pct": round(porcentaje_error(ear_osc, ear_ref), 4),
         "deteccion_ref": 1,                       # si no, la imagen se salta
-        "deteccion_mejorada": 1 if det_mej else 0,
+        "deteccion_mejorada": 1 if det_mej else 0,   # cara detectada (FaceMesh)
+        # ojos ubicados = se pudo calcular el EAR en la mejorada. En el pipeline
+        # con FaceMesh equivale a deteccion_mejorada (los landmarks de ojos solo
+        # existen si se detecto la cara), pero se reporta aparte por claridad.
+        "deteccion_ojos": 0 if math.isnan(ear_mej_val) else 1,
         "fps": round(fps, 3),
         "flops": flops if math.isnan(flops) else round(flops, 1),
     }
@@ -309,12 +313,12 @@ def _media(valores):
 
 
 def imprimir_resumen(filas, niveles=NIVELES):
-    print("\n" + "=" * 78)
+    print("\n" + "=" * 92)
     print("RESUMEN POR NIVEL DE BRILLO")
-    print("=" * 78)
+    print("=" * 92)
     print(f"{'Nivel':>6} | {'n':>5} | {'PSNR_ref':>9} | {'SSIM_ref':>9} | "
-          f"{'EAR_err_mej%':>12} | {'tasa_det':>8}")
-    print("-" * 78)
+          f"{'EAR_err_mej%':>12} | {'tasa_det':>9} | {'tasa_det_ojos':>13}")
+    print("-" * 92)
 
     for nivel in niveles:
         sub = [f for f in filas if f["nivel_brillo"] == nivel]
@@ -325,9 +329,10 @@ def imprimir_resumen(filas, niveles=NIVELES):
         ssim = _media([f["ssim_vs_ref"] for f in sub])
         ear_err = _media([f["ear_error_mej_pct"] for f in sub])
         tasa = sum(f["deteccion_mejorada"] for f in sub) / n
+        tasa_ojos = sum(f["deteccion_ojos"] for f in sub) / n
         print(f"{nivel:>6} | {n:>5} | {psnr:>9.3f} | {ssim:>9.4f} | "
-              f"{ear_err:>12.3f} | {tasa:>8.2%}")
-    print("=" * 78)
+              f"{ear_err:>12.3f} | {tasa:>9.2%} | {tasa_ojos:>13.2%}")
+    print("=" * 92)
 
 
 # =============================================================================
